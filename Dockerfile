@@ -14,9 +14,9 @@ RUN pip install -r requirements.txt
 COPY main.py .
 COPY static ./static
 
-# Recordings are written here. On Railway, mount a Volume at /data.
+# Recordings are written here. On Railway, attach a Railway Volume at /data
+# (Railway rejects the Dockerfile VOLUME instruction, so it is not used here).
 RUN mkdir -p /data
-VOLUME ["/data"]
 
 # Railway injects PORT; default to 8000 for local runs.
 ENV PORT=8000
