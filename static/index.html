@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deriv Tick Collector</title>
+<style>
+  :root {
+    --bg: #0b0e13;
+    --panel: #121721;
+    --panel-2: #0f141c;
+    --line: #1f2733;
+    --text: #e6ebf2;
+    --muted: #7d8aa0;
+    --accent: #3ddc97;
+    --accent-ink: #04140c;
+    --danger: #ff5d6c;
+    --warn: #ffb454;
+    --up: #3ddc97;
+    --down: #ff5d6c;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans); }
+  body { padding: 20px; max-width: 1200px; margin: 0 auto; }
+
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+  h1 { font-size: 18px; margin: 0; font-weight: 650; letter-spacing: .2px; }
+  h1 span { color: var(--muted); font-weight: 400; }
+  .pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #55607a; }
+  .pill.live .dot { background: var(--accent); box-shadow: 0 0 0 0 rgba(61,220,151,.6); animation: pulse 1.6s infinite; }
+  .pill.live { color: var(--text); }
+  .pill.reconnecting .dot { background: var(--warn); }
+  .pill.reconnecting { color: var(--warn); }
+  @keyframes pulse { 70% { box-shadow: 0 0 0 8px rgba(61,220,151,0); } 100% { box-shadow: 0 0 0 0 rgba(61,220,151,0); } }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+  .card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin: 0 0 12px; font-weight: 600; }
+
+  .controls { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: end; }
+  .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  select { width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 12px; font-size: 15px; font-family: var(--sans); }
+  select:disabled { opacity: .55; cursor: not-allowed; }
+  button { font-family: var(--sans); font-size: 15px; font-weight: 650; border-radius: 10px; padding: 12px 22px; border: 1px solid transparent; cursor: pointer; min-width: 120px; transition: transform .05s, filter .15s; }
+  button:active { transform: translateY(1px); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-start { background: var(--accent); color: var(--accent-ink); }
+  .btn-stop { background: var(--danger); color: #fff; }
+  .btn-ghost { background: transparent; color: var(--text); border-color: var(--line); }
+  .btn-ghost:hover:not(:disabled) { border-color: #34415a; filter: brightness(1.1); }
+
+  .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-top: 14px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .stat .k { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); }
+  .stat .v { font-family: var(--mono); font-size: 20px; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .up { color: var(--up); } .down { color: var(--down); }
+
+  .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; margin-top: 14px; }
+  canvas { width: 100%; height: 280px; display: block; }
+  table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 13px; }
+  th, td { text-align: right; padding: 6px 4px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .6px; }
+  th:first-child, td:first-child { text-align: left; }
+  .scroll { max-height: 280px; overflow: auto; }
+
+  #console { background: #080b10; border: 1px solid var(--line); border-radius: 10px; font-family: var(--mono); font-size: 12.5px; line-height: 1.55; height: 260px; overflow: auto; padding: 10px 12px; }
+  #console .l { white-space: pre-wrap; word-break: break-word; }
+  #console .ts { color: #4d5a73; margin-right: 8px; }
+  #console .info { color: #b8c4d9; }
+  #console .warn { color: var(--warn); }
+  #console .error { color: var(--danger); }
+  #console .debug { color: #5d6a84; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .row h2 { margin: 0; }
+  .tiny { font-size: 12px; padding: 6px 10px; min-width: 0; }
+
+  .files { margin-top: 14px; }
+  .file { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .file:last-child { border-bottom: 0; }
+  .file .name { font-family: var(--mono); }
+  .file .meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .file .actions { display: flex; gap: 8px; }
+  .badge { background: rgba(61,220,151,.15); color: var(--accent); border-radius: 6px; padding: 2px 6px; font-size: 11px; margin-left: 8px; }
+  .empty { color: var(--muted); font-size: 13px; padding: 6px 0; }
+
+  @media (max-width: 860px) {
+    .controls { grid-template-columns: 1fr 1fr; }
+    .controls .field { grid-column: 1 / -1; }
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Deriv Tick Collector <span>/ synthetic indices</span></h1>
+    <div id="pill" class="pill"><span class="dot"></span><span id="pillText">Idle</span></div>
+  </header>
+
+  <section class="card">
+    <h2>Recorder</h2>
+    <div class="controls">
+      <div class="field">
+        <label for="symbol">Symbol</label>
+        <select id="symbol"></select>
+      </div>
+      <button id="toggle" class="btn-start">Start</button>
+      <button id="download" class="btn-ghost">Download CSV</button>
+    </div>
+  </section>
+
+  <section class="stats">
+    <div class="stat"><div class="k">Ticks recorded</div><div class="v" id="sCount">0</div></div>
+    <div class="stat"><div class="k">Last quote</div><div class="v" id="sQuote">-</div></div>
+    <div class="stat"><div class="k">Change</div><div class="v" id="sChange">-</div></div>
+    <div class="stat"><div class="k">Running for</div><div class="v" id="sElapsed">00:00:00</div></div>
+    <div class="stat"><div class="k">Reconnects</div><div class="v" id="sRecon">0</div></div>
+  </section>
+
+  <section class="grid">
+    <div class="card">
+      <div class="row"><h2>Price (last 300 ticks)</h2><span id="chartSym" style="color:var(--muted);font-size:12px"></span></div>
+      <canvas id="chart"></canvas>
+    </div>
+    <div class="card">
+      <h2>Latest ticks</h2>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Time (UTC)</th><th>Quote</th><th>Chg</th></tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" style="margin-top:14px">
+    <div class="row">
+      <h2>Console</h2>
+      <div style="display:flex;gap:8px">
+        <button id="clearLog" class="btn-ghost tiny">Clear view</button>
+        <button id="autoscroll" class="btn-ghost tiny">Auto-scroll: on</button>
+      </div>
+    </div>
+    <div id="console" style="margin-top:10px"></div>
+  </section>
+
+  <section class="card files">
+    <div class="row"><h2>Saved recordings</h2><button id="refreshFiles" class="btn-ghost tiny">Refresh</button></div>
+    <div id="files"></div>
+  </section>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const state = { running: false, connected: false, startedAt: null, ticks: [], symbol: null, autoscroll: true };
+
+// ---------------------------------------------------------------- helpers
+const fmtTime = (epoch) => new Date(epoch * 1000).toISOString().slice(11, 19);
+const fmtBytes = (n) => n < 1024 ? n + " B" : n < 1048576 ? (n / 1024).toFixed(1) + " KB" : (n / 1048576).toFixed(2) + " MB";
+const pad = (n) => String(n).padStart(2, "0");
+const decimals = (n) => { const s = String(n); const i = s.indexOf("."); return i < 0 ? 0 : s.length - i - 1; };
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  if (!r.ok) {
+    let msg = r.statusText;
+    try { msg = (await r.json()).detail || msg; } catch (_) {}
+    throw new Error(msg);
+  }
+  return r.json();
+}
+
+// ---------------------------------------------------------------- UI state
+function renderStatus(s) {
+  state.running = s.running;
+  state.connected = s.connected;
+  state.startedAt = s.started_at;
+  if (s.symbol) state.symbol = s.symbol;
+
+  const btn = $("toggle");
+  btn.textContent = s.running ? "Stop" : "Start";
+  btn.className = s.running ? "btn-stop" : "btn-start";
+  $("symbol").disabled = s.running;
+  if (s.running && s.symbol) $("symbol").value = s.symbol;
+
+  const pill = $("pill");
+  pill.className = "pill";
+  if (!s.running) { $("pillText").textContent = "Idle"; }
+  else if (s.connected) { pill.classList.add("live"); $("pillText").textContent = "Recording " + s.symbol; }
+  else { pill.classList.add("reconnecting"); $("pillText").textContent = "Reconnecting..."; }
+
+  $("sCount").textContent = s.tick_count.toLocaleString();
+  $("sRecon").textContent = s.reconnects;
+  $("chartSym").textContent = s.symbol || "";
+  if (s.last_tick) renderLast(s.last_tick);
+}
+
+function renderLast(t) {
+  $("sQuote").textContent = t.quote;
+  const c = $("sChange");
+  if (t.change === null || t.change === undefined) { c.textContent = "-"; c.className = "v"; }
+  else {
+    const d = Math.max(decimals(t.quote), 2);
+    c.textContent = (t.change > 0 ? "+" : "") + t.change.toFixed(d);
+    c.className = "v " + (t.change > 0 ? "up" : t.change < 0 ? "down" : "");
+  }
+}
+
+setInterval(() => {
+  if (state.running && state.startedAt) {
+    const s = Math.max(0, Math.floor(Date.now() / 1000 - state.startedAt));
+    $("sElapsed").textContent = pad(Math.floor(s / 3600)) + ":" + pad(Math.floor(s / 60) % 60) + ":" + pad(s % 60);
+  }
+}, 500);
+
+// ---------------------------------------------------------------- ticks table + chart
+function addTick(t, redraw = true) {
+  state.ticks.push(t);
+  if (state.ticks.length > 300) state.ticks.shift();
+  if (!redraw) return;
+  renderLast(t);
+  $("sCount").textContent = t.count.toLocaleString();
+  const tb = $("tbody");
+  const tr = document.createElement("tr");
+  const cls = t.change > 0 ? "up" : t.change < 0 ? "down" : "";
+  const d = Math.max(decimals(t.quote), 2);
+  tr.innerHTML = `<td>${fmtTime(t.epoch)}</td><td>${t.quote}</td><td class="${cls}">${t.change == null ? "-" : (t.change > 0 ? "+" : "") + t.change.toFixed(d)}</td>`;
+  tb.insertBefore(tr, tb.firstChild);
+  while (tb.children.length > 40) tb.removeChild(tb.lastChild);
+  drawChart();
+}
+
+function rebuildTable() {
+  const tb = $("tbody");
+  tb.innerHTML = "";
+  state.ticks.slice(-40).forEach((t) => {
+    const tr = document.createElement("tr");
+    const cls = t.change > 0 ? "up" : t.change < 0 ? "down" : "";
+    const d = Math.max(decimals(t.quote), 2);
+    tr.innerHTML = `<td>${fmtTime(t.epoch)}</td><td>${t.quote}</td><td class="${cls}">${t.change == null ? "-" : (t.change > 0 ? "+" : "") + t.change.toFixed(d)}</td>`;
+    tb.insertBefore(tr, tb.firstChild);
+  });
+}
+
+function drawChart() {
+  const cv = $("chart");
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  if (cv.width !== w * dpr || cv.height !== h * dpr) { cv.width = w * dpr; cv.height = h * dpr; }
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  const pts = state.ticks;
+  const padL = 8, padR = 62, padT = 10, padB = 18;
+  if (pts.length < 2) {
+    ctx.fillStyle = "#55607a"; ctx.font = "13px ui-sans-serif, system-ui";
+    ctx.fillText("Waiting for ticks...", padL + 4, h / 2);
+    return;
+  }
+  let min = Infinity, max = -Infinity;
+  for (const p of pts) { if (p.quote < min) min = p.quote; if (p.quote > max) max = p.quote; }
+  if (min === max) { min -= 0.5; max += 0.5; }
+  const m = (max - min) * 0.08; min -= m; max += m;
+  const x = (i) => padL + (i / (pts.length - 1)) * (w - padL - padR);
+  const y = (v) => padT + (1 - (v - min) / (max - min)) * (h - padT - padB);
+  const d = Math.max(decimals(pts[pts.length - 1].quote), 2);
+
+  // grid
+  ctx.strokeStyle = "#1a2230"; ctx.lineWidth = 1; ctx.fillStyle = "#6b7890"; ctx.font = "11px ui-monospace, Menlo, monospace";
+  for (let i = 0; i <= 4; i++) {
+    const v = min + ((max - min) * i) / 4, yy = y(v);
+    ctx.beginPath(); ctx.moveTo(padL, yy); ctx.lineTo(w - padR, yy); ctx.stroke();
+    ctx.fillText(v.toFixed(d), w - padR + 6, yy + 4);
+  }
+  ctx.fillText(fmtTime(pts[0].epoch), padL, h - 4);
+  const lt = fmtTime(pts[pts.length - 1].epoch);
+  ctx.fillText(lt, w - padR - ctx.measureText(lt).width, h - 4);
+
+  // area
+  const grad = ctx.createLinearGradient(0, padT, 0, h - padB);
+  grad.addColorStop(0, "rgba(61,220,151,.22)"); grad.addColorStop(1, "rgba(61,220,151,0)");
+  ctx.beginPath();
+  pts.forEach((p, i) => (i ? ctx.lineTo(x(i), y(p.quote)) : ctx.moveTo(x(i), y(p.quote))));
+  ctx.lineTo(x(pts.length - 1), h - padB); ctx.lineTo(x(0), h - padB); ctx.closePath();
+  ctx.fillStyle = grad; ctx.fill();
+
+  // line
+  ctx.beginPath();
+  pts.forEach((p, i) => (i ? ctx.lineTo(x(i), y(p.quote)) : ctx.moveTo(x(i), y(p.quote))));
+  ctx.strokeStyle = "#3ddc97"; ctx.lineWidth = 1.6; ctx.lineJoin = "round"; ctx.stroke();
+
+  // last point + label
+  const last = pts[pts.length - 1], lx = x(pts.length - 1), ly = y(last.quote);
+  ctx.fillStyle = "#3ddc97"; ctx.beginPath(); ctx.arc(lx, ly, 3.5, 0, 6.3); ctx.fill();
+  const label = String(last.quote);
+  ctx.fillStyle = "#3ddc97"; ctx.fillRect(w - padR + 2, ly - 9, padR - 4, 18);
+  ctx.fillStyle = "#04140c"; ctx.font = "600 11px ui-monospace, Menlo, monospace"; ctx.fillText(label, w - padR + 6, ly + 4);
+}
+window.addEventListener("resize", drawChart);
+
+// ---------------------------------------------------------------- console
+const con = $("console");
+function addLog(e) {
+  const div = document.createElement("div");
+  div.className = "l " + (e.level || "info");
+  div.innerHTML = `<span class="ts">${e.ts.slice(11, 23)}</span>`;
+  div.appendChild(document.createTextNode(e.message));
+  con.appendChild(div);
+  while (con.children.length > 1000) con.removeChild(con.firstChild);
+  if (state.autoscroll) con.scrollTop = con.scrollHeight;
+}
+$("clearLog").onclick = () => { con.innerHTML = ""; };
+$("autoscroll").onclick = () => {
+  state.autoscroll = !state.autoscroll;
+  $("autoscroll").textContent = "Auto-scroll: " + (state.autoscroll ? "on" : "off");
+  if (state.autoscroll) con.scrollTop = con.scrollHeight;
+};
+
+// ---------------------------------------------------------------- files
+async function loadFiles() {
+  try {
+    const files = await api("/api/files");
+    const box = $("files");
+    if (!files.length) { box.innerHTML = '<div class="empty">No recordings yet. Press Start to create one.</div>'; return; }
+    box.innerHTML = "";
+    files.forEach((f) => {
+      const el = document.createElement("div");
+      el.className = "file";
+      el.innerHTML = `<div><div class="name">${f.name}${f.active ? '<span class="badge">recording</span>' : ""}</div>
+        <div class="meta">${fmtBytes(f.size)} &middot; ${new Date(f.modified).toLocaleString()}</div></div>
+        <div class="actions">
+          <a href="/api/download/${encodeURIComponent(f.name)}"><button class="btn-ghost tiny">Download</button></a>
+          <button class="btn-ghost tiny" data-del="${f.name}" ${f.active ? "disabled" : ""}>Delete</button>
+        </div>`;
+      box.appendChild(el);
+    });
+    box.querySelectorAll("[data-del]").forEach((b) => (b.onclick = async () => {
+      if (!confirm("Delete " + b.dataset.del + "?")) return;
+      try { await api("/api/files/" + encodeURIComponent(b.dataset.del), { method: "DELETE" }); } catch (e) { alert(e.message); }
+      loadFiles();
+    }));
+  } catch (e) { console.error(e); }
+}
+$("refreshFiles").onclick = loadFiles;
+
+// ---------------------------------------------------------------- actions
+$("toggle").onclick = async () => {
+  const btn = $("toggle");
+  btn.disabled = true;
+  try {
+    const s = state.running
+      ? await api("/api/stop", { method: "POST" })
+      : await api("/api/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: $("symbol").value }) });
+    renderStatus(s);
+  } catch (e) { alert(e.message); }
+  btn.disabled = false;
+  loadFiles();
+};
+$("download").onclick = () => { window.location.href = "/api/download-current"; };
+
+// ---------------------------------------------------------------- init + SSE
+async function init() {
+  const syms = await api("/api/symbols");
+  $("symbol").innerHTML = syms.map((s) => `<option value="${s.id}">${s.name} (${s.id})</option>`).join("");
+  loadFiles();
+  connectSSE();
+}
+
+function connectSSE() {
+  const es = new EventSource("/events");
+  es.addEventListener("status", (e) => { renderStatus(JSON.parse(e.data)); });
+  es.addEventListener("snapshot", (e) => {
+    const d = JSON.parse(e.data);
+    con.innerHTML = ""; d.logs.forEach(addLog);
+    state.ticks = []; d.ticks.forEach((t) => addTick(t, false));
+    rebuildTable(); drawChart();
+  });
+  es.addEventListener("reset", () => { state.ticks = []; $("tbody").innerHTML = ""; drawChart(); loadFiles(); });
+  es.addEventListener("tick", (e) => addTick(JSON.parse(e.data)));
+  es.addEventListener("log", (e) => addLog(JSON.parse(e.data)));
+  es.addEventListener("status", () => {});
+  es.onerror = () => addLog({ ts: new Date().toISOString(), level: "warn", message: "Dashboard stream interrupted, reconnecting..." });
+  setInterval(loadFiles, 15000);
+}
+init();
+</script>
+</body>
+</html>
