@@ -4,162 +4,285 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Deriv Tick Collector</title>
-<style>
-  :root {
-    --bg: #0b0e13;
-    --panel: #121721;
-    --panel-2: #0f141c;
-    --line: #1f2733;
-    --text: #e6ebf2;
-    --muted: #7d8aa0;
-    --accent: #3ddc97;
-    --accent-ink: #04140c;
-    --danger: #ff5d6c;
-    --warn: #ffb454;
-    --up: #3ddc97;
-    --down: #ff5d6c;
-    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
-    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans); }
-  body { padding: 20px; max-width: 1200px; margin: 0 auto; }
-
-  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
-  h1 { font-size: 18px; margin: 0; font-weight: 650; letter-spacing: .2px; }
-  h1 span { color: var(--muted); font-weight: 400; }
-  .pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); font-size: 13px; color: var(--muted); }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: #55607a; }
-  .pill.live .dot { background: var(--accent); box-shadow: 0 0 0 0 rgba(61,220,151,.6); animation: pulse 1.6s infinite; }
-  .pill.live { color: var(--text); }
-  .pill.reconnecting .dot { background: var(--warn); }
-  .pill.reconnecting { color: var(--warn); }
-  @keyframes pulse { 70% { box-shadow: 0 0 0 8px rgba(61,220,151,0); } 100% { box-shadow: 0 0 0 0 rgba(61,220,151,0); } }
-
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
-  .card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin: 0 0 12px; font-weight: 600; }
-
-  .controls { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: end; }
-  .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
-  select { width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 12px; font-size: 15px; font-family: var(--sans); }
-  select:disabled { opacity: .55; cursor: not-allowed; }
-  button { font-family: var(--sans); font-size: 15px; font-weight: 650; border-radius: 10px; padding: 12px 22px; border: 1px solid transparent; cursor: pointer; min-width: 120px; transition: transform .05s, filter .15s; }
-  button:active { transform: translateY(1px); }
-  button:disabled { opacity: .5; cursor: not-allowed; }
-  .btn-start { background: var(--accent); color: var(--accent-ink); }
-  .btn-stop { background: var(--danger); color: #fff; }
-  .btn-ghost { background: transparent; color: var(--text); border-color: var(--line); }
-  .btn-ghost:hover:not(:disabled) { border-color: #34415a; filter: brightness(1.1); }
-
-  .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-top: 14px; }
-  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
-  .stat .k { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); }
-  .stat .v { font-family: var(--mono); font-size: 20px; margin-top: 6px; font-variant-numeric: tabular-nums; }
-  .up { color: var(--up); } .down { color: var(--down); }
-
-  .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; margin-top: 14px; }
-  canvas { width: 100%; height: 280px; display: block; }
-  table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 13px; }
-  th, td { text-align: right; padding: 6px 4px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
-  th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .6px; }
-  th:first-child, td:first-child { text-align: left; }
-  .scroll { max-height: 280px; overflow: auto; }
-
-  #console { background: #080b10; border: 1px solid var(--line); border-radius: 10px; font-family: var(--mono); font-size: 12.5px; line-height: 1.55; height: 260px; overflow: auto; padding: 10px 12px; }
-  #console .l { white-space: pre-wrap; word-break: break-word; }
-  #console .ts { color: #4d5a73; margin-right: 8px; }
-  #console .info { color: #b8c4d9; }
-  #console .warn { color: var(--warn); }
-  #console .error { color: var(--danger); }
-  #console .debug { color: #5d6a84; }
-  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-  .row h2 { margin: 0; }
-  .tiny { font-size: 12px; padding: 6px 10px; min-width: 0; }
-
-  .files { margin-top: 14px; }
-  .file { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
-  .file:last-child { border-bottom: 0; }
-  .file .name { font-family: var(--mono); }
-  .file .meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
-  .file .actions { display: flex; gap: 8px; }
-  .badge { background: rgba(61,220,151,.15); color: var(--accent); border-radius: 6px; padding: 2px 6px; font-size: 11px; margin-left: 8px; }
-  .empty { color: var(--muted); font-size: 13px; padding: 6px 0; }
-
-  @media (max-width: 860px) {
-    .controls { grid-template-columns: 1fr 1fr; }
-    .controls .field { grid-column: 1 / -1; }
-    .stats { grid-template-columns: repeat(2, 1fr); }
-    .grid { grid-template-columns: 1fr; }
-  }
-</style>
+<link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
+  <div id="liveBanner" class="live-banner" role="status" style="display:none">Live account selected. Trades use real money.</div>
+
   <header>
-    <h1>Deriv Tick Collector <span>/ synthetic indices</span></h1>
-    <div id="pill" class="pill"><span class="dot"></span><span id="pillText">Idle</span></div>
+    <div class="header-left">
+      <h1>Deriv Tick Collector <span>/ synthetic indices</span></h1>
+      <div id="pill" class="pill"><span class="dot"></span><span id="pillText">Idle</span></div>
+      <span id="acctBadge" class="badge-live-acct" style="display:none">Live Account</span>
+    </div>
+    <div class="header-right">
+      <button id="soundToggle" class="btn-ghost tiny" type="button" title="Toggle audio alerts">Sound: ON</button>
+      <a href="/settings" class="btn-ghost tiny">Settings</a>
+    </div>
   </header>
 
+  <!-- Top Controls Card -->
   <section class="card">
-    <h2>Recorder</h2>
-    <div class="controls">
+    <div class="row">
+      <h2>10m Window Auto-Trader</h2>
+      <span class="tag" style="background:rgba(61,220,151,.15);color:var(--accent);font-size:12px;padding:3px 8px">10m Learn & Trade Loop</span>
+    </div>
+
+    <div class="controls" style="margin-top:10px">
       <div class="field">
-        <label for="symbol">Symbol</label>
+        <label for="symbol">Synthetic Symbol</label>
         <select id="symbol"></select>
       </div>
-      <button id="toggle" class="btn-start">Start</button>
-      <button id="download" class="btn-ghost">Download CSV</button>
+      <button id="toggle" class="btn-start" type="button">Start</button>
+      <button id="download" class="btn-ghost" type="button">Download CSV</button>
     </div>
+
+    <div id="confirmField" style="margin-top:12px; display:none;">
+      <label class="check">
+        <input type="checkbox" id="confirmReal">
+        <span style="color:var(--danger);font-weight:600">I understand live trades use real money and can lose the stake.</span>
+      </label>
+    </div>
+
+    <div id="setupSummary" style="margin-top:12px; font-size:12.5px; color:var(--muted); border-top:1px solid var(--line); padding-top:10px; display:flex; gap:16px; flex-wrap:wrap">
+      <span>Account: <strong id="sumAcct" style="color:var(--text)">Demo</strong></span>
+      <span>Cycle: <strong id="sumMode" style="color:var(--text)">10 Min (Continuous Learning)</strong></span>
+      <span>Memory: <strong id="sumArch" style="color:var(--text)">1-Hr Archival & Pruning</strong></span>
+      <span>Stake: <strong id="sumStake" style="color:var(--text)">1.00 USD</strong></span>
+      <span>Loss Limit: <strong id="sumLoss" style="color:var(--text)">10.00 USD</strong></span>
+      <span>Strictness: <strong id="sumStrict" style="color:var(--accent)">Strict (Beats Breakeven & Luck)</strong></span>
+    </div>
+    <p id="err" class="note bad" style="margin-top:12px; display:none"></p>
   </section>
 
+  <!-- Stats Grid -->
   <section class="stats">
-    <div class="stat"><div class="k">Ticks recorded</div><div class="v" id="sCount">0</div></div>
-    <div class="stat"><div class="k">Last quote</div><div class="v" id="sQuote">-</div></div>
-    <div class="stat"><div class="k">Change</div><div class="v" id="sChange">-</div></div>
-    <div class="stat"><div class="k">Running for</div><div class="v" id="sElapsed">00:00:00</div></div>
-    <div class="stat"><div class="k">Reconnects</div><div class="v" id="sRecon">0</div></div>
+    <div class="stat">
+      <div class="k">Ticks (This Window)</div>
+      <div class="v" id="sWindowCount">0</div>
+      <div class="sub"><span id="sTotalTicks">0</span> total session ticks</div>
+    </div>
+    <div class="stat">
+      <div class="k">Last Quote</div>
+      <div class="v" id="sQuote">-</div>
+      <div class="sub" id="sAcctBal">-</div>
+    </div>
+    <div class="stat">
+      <div class="k">Tick Change</div>
+      <div class="v" id="sChange">-</div>
+      <div class="sub" id="sChangePips">pip change</div>
+    </div>
+    <div class="stat">
+      <div class="k" id="timerLabel">Window 1 Timer</div>
+      <div class="v" id="sCountdown">10:00</div>
+      <div class="meter-wrap"><div class="meter-fill" id="meterFill"></div></div>
+      <div class="sub" id="sPhaseDesc">Gathering ticks only</div>
+    </div>
+    <div class="stat">
+      <div class="k">Session P/L</div>
+      <div class="v" id="sPnl">0.00</div>
+      <div class="sub" id="sWl">0 won, 0 lost</div>
+    </div>
+    <div class="stat">
+      <div class="k">Current Rule</div>
+      <div class="v" id="sRule" style="font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">Gathering...</div>
+      <div class="sub" id="sRuleDetail">Window 1: 10m Baseline</div>
+    </div>
   </section>
 
-  <section class="grid">
-    <div class="card">
-      <div class="row"><h2>Price (last 300 ticks)</h2><span id="chartSym" style="color:var(--muted);font-size:12px"></span></div>
+  <!-- Main Grid: Chart on Left (Just This Window!), Latest Ticks Table on Right -->
+  <section class="grid-main">
+    <div class="card chart-box">
+      <div class="row" style="margin-bottom:8px">
+        <h2 id="chartTitle">Price (Window 1 - Current 10m Window)</h2>
+        <span id="chartSym" style="color:var(--muted);font-family:var(--mono);font-size:12px"></span>
+      </div>
       <canvas id="chart"></canvas>
+      <div id="tip" style="display:none"></div>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; font-size:12px; color:var(--muted)">
+        <span>Showing exclusively ticks for this 10-minute window</span>
+        <span>Green ▲ / Red ▼ indicate trades placed</span>
+      </div>
     </div>
+
     <div class="card">
-      <h2>Latest ticks</h2>
+      <div class="row" style="margin-bottom:6px">
+        <h2>Latest Ticks (This Window)</h2>
+        <span id="winTickBadge" class="tag">Window 1</span>
+      </div>
       <div class="scroll">
         <table>
-          <thead><tr><th>Time (UTC)</th><th>Quote</th><th>Chg</th></tr></thead>
+          <thead>
+            <tr><th>Time (UTC)</th><th class="num">Quote</th><th class="num">Chg</th></tr>
+          </thead>
           <tbody id="tbody"></tbody>
         </table>
       </div>
     </div>
   </section>
 
-  <section class="card" style="margin-top:14px">
+  <!-- Strategy Analysis & Completed 10m Windows Card -->
+  <section class="card">
     <div class="row">
-      <h2>Console</h2>
+      <h2>Strategy Analysis & 10m Windows Scorecard</h2>
+      <span id="stratStatus" style="font-size:12px; color:var(--muted)">Each window trades what the previous window discovered</span>
+    </div>
+
+    <div id="stratGaugeWrap" style="display:none; margin:12px 0 16px;">
+      <div style="font-size:13px; font-weight:600; color:var(--text)" id="stratReason"></div>
+      <div class="wr-gauge">
+        <div class="mk be" id="gBe" title="Breakeven Win Rate"></div>
+        <div class="mk luck" id="gLuck" title="Luck Benchmark (90th percentile)"></div>
+        <div class="dot-val" id="gDot" title="Selected Rule Win Rate"></div>
+      </div>
+      <div style="display:flex; gap:16px; font-size:12px; color:var(--muted); margin-top:4px">
+        <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--accent);margin-right:4px"></span><span id="gRuleText">Rule</span></span>
+        <span><span style="display:inline-block;width:2px;height:10px;background:#e6ebf2;margin-right:4px"></span><span id="gBeText">Breakeven</span></span>
+        <span><span style="display:inline-block;width:2px;height:10px;background:var(--warn);margin-right:4px"></span><span id="gLuckText">Luck Benchmark</span></span>
+      </div>
+    </div>
+
+    <div class="scroll" style="max-height:220px; margin-top:8px">
+      <table id="cyclesTable">
+        <thead>
+          <tr>
+            <th>Period</th>
+            <th>Role</th>
+            <th>Rule Traded</th>
+            <th class="num">Trades</th>
+            <th class="num">Promised WR</th>
+            <th class="num">Actual WR</th>
+            <th class="num">Profit</th>
+          </tr>
+        </thead>
+        <tbody id="cycleRows">
+          <tr><td colspan="7" style="color:var(--muted);text-align:center;padding:14px 0">Window 1 is gathering ticks. Analysis and scorecard will appear once Window 1 completes.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Executed Trades Card -->
+  <section class="card">
+    <div class="row">
+      <h2>Trades Executed This Session</h2>
+      <span id="tradesCountBadge" style="font-size:12px; color:var(--muted)">0 trades</span>
+    </div>
+    <div class="scroll" style="max-height:220px; margin-top:8px">
+      <table id="tradesTable">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Period</th>
+            <th>Side</th>
+            <th class="num">Expiry</th>
+            <th>Entry -> Exit</th>
+            <th>Status</th>
+            <th class="num">Profit (USD)</th>
+          </tr>
+        </thead>
+        <tbody id="tradeRows">
+          <tr><td colspan="7" style="color:var(--muted);text-align:center;padding:14px 0">No trades yet. Window 1 gathers baseline ticks without trading.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Console Log Card -->
+  <section class="card">
+    <div class="row">
+      <h2>Console Logs</h2>
       <div style="display:flex;gap:8px">
-        <button id="clearLog" class="btn-ghost tiny">Clear view</button>
-        <button id="autoscroll" class="btn-ghost tiny">Auto-scroll: on</button>
+        <button id="clearLog" class="btn-ghost tiny" type="button">Clear view</button>
+        <button id="autoscroll" class="btn-ghost tiny" type="button">Auto-scroll: on</button>
       </div>
     </div>
     <div id="console" style="margin-top:10px"></div>
   </section>
 
-  <section class="card files">
-    <div class="row"><h2>Saved recordings</h2><button id="refreshFiles" class="btn-ghost tiny">Refresh</button></div>
-    <div id="files"></div>
+  <!-- Saved Session Files Card -->
+  <section class="card">
+    <div class="row">
+      <h2>Saved Session Data (CSVs)</h2>
+      <button id="refreshFiles" class="btn-ghost tiny" type="button">Refresh</button>
+    </div>
+    <div id="files" style="margin-top:10px"></div>
   </section>
 
 <script>
 const $ = (id) => document.getElementById(id);
-const state = { running: false, connected: false, startedAt: null, ticks: [], symbol: null, autoscroll: true };
+const state = {
+  running: false,
+  connected: false,
+  symbol: "R_100",
+  currentCycle: 1,
+  cyclePhase: "learning",
+  windowTicks: [],       // ONLY ticks for the current 10-minute window
+  allSessionTrades: [],
+  cyclesMap: new Map(),
+  strategy: null,
+  sess: null,
+  offset: 0,
+  autoscroll: true,
+  hoverIdx: null,
+  soundEnabled: true
+};
 
-// ---------------------------------------------------------------- helpers
+// ---------------------------------------------------------------- Web Audio API
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let audioCtx = null;
+function getAudioContext() {
+  if (!audioCtx && AudioCtx) audioCtx = new AudioCtx();
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+function playBeep(freq, type, duration, delay = 0) {
+  if (!state.soundEnabled) return;
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, ctx.currentTime + delay);
+    gain.gain.setValueAtTime(0.08, ctx.currentTime + delay);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + duration);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(ctx.currentTime + delay);
+    osc.stop(ctx.currentTime + delay + duration);
+  } catch (_) {}
+}
+function playSoundTrade(res) {
+  if (res === "won") {
+    playBeep(523.25, "sine", 0.12, 0.00); // C5
+    playBeep(659.25, "sine", 0.12, 0.10); // E5
+    playBeep(783.99, "sine", 0.25, 0.20); // G5
+  } else if (res === "lost") {
+    playBeep(329.63, "triangle", 0.15, 0.00); // E4
+    playBeep(220.00, "triangle", 0.30, 0.12); // A3
+  } else if (res === "open") {
+    playBeep(440.00, "sine", 0.08, 0.00);
+    playBeep(659.25, "sine", 0.12, 0.08);
+  } else if (res === "rollover") {
+    playBeep(587.33, "sine", 0.10, 0.00);
+    playBeep(880.00, "sine", 0.20, 0.10);
+  }
+}
+$("soundToggle").onclick = () => {
+  state.soundEnabled = !state.soundEnabled;
+  $("soundToggle").textContent = "Sound: " + (state.soundEnabled ? "ON" : "OFF");
+  if (state.soundEnabled) playSoundTrade("open");
+};
+
+// ---------------------------------------------------------------- Helpers
 const fmtTime = (epoch) => new Date(epoch * 1000).toISOString().slice(11, 19);
-const fmtBytes = (n) => n < 1024 ? n + " B" : n < 1048576 ? (n / 1024).toFixed(1) + " KB" : (n / 1048576).toFixed(2) + " MB";
+const fmtBytes = (n) => (n < 1024 ? n + " B" : n < 1048576 ? (n / 1024).toFixed(1) + " KB" : (n / 1048576).toFixed(2) + " MB");
 const pad = (n) => String(n).padStart(2, "0");
-const decimals = (n) => { const s = String(n); const i = s.indexOf("."); return i < 0 ? 0 : s.length - i - 1; };
+const mmss = (s) => pad(Math.floor(s / 60)) + ":" + pad(Math.floor(s % 60));
+const signed = (n, d = 2) => (n > 0 ? "+" : n < 0 ? "-" : "") + Math.abs(n).toFixed(d);
+const pct = (x) => Math.round(x * 100) + "%";
+const decimals = (n) => { const s = String(n); const i = s.indexOf("."); return i < 0 ? 2 : s.length - i - 1; };
 
 async function api(path, opts) {
   const r = await fetch(path, opts);
@@ -171,136 +294,390 @@ async function api(path, opts) {
   return r.json();
 }
 
-// ---------------------------------------------------------------- UI state
+// ---------------------------------------------------------------- Status & UI Render
 function renderStatus(s) {
-  state.running = s.running;
-  state.connected = s.connected;
-  state.startedAt = s.started_at;
+  state.running = !!s.running;
+  state.connected = !!s.connected;
   if (s.symbol) state.symbol = s.symbol;
+  if (s.session) {
+    state.sess = s.session;
+    state.offset = s.session.server_now - Date.now() / 1000;
+    if (s.session.cycle) state.currentCycle = s.session.cycle;
+    if (s.session.phase) state.cyclePhase = s.session.phase;
+  }
 
   const btn = $("toggle");
   btn.textContent = s.running ? "Stop" : "Start";
   btn.className = s.running ? "btn-stop" : "btn-start";
   $("symbol").disabled = s.running;
-  if (s.running && s.symbol) $("symbol").value = s.symbol;
 
   const pill = $("pill");
   pill.className = "pill";
-  if (!s.running) { $("pillText").textContent = "Idle"; }
-  else if (s.connected) { pill.classList.add("live"); $("pillText").textContent = "Recording " + s.symbol; }
-  else { pill.classList.add("reconnecting"); $("pillText").textContent = "Reconnecting..."; }
+  if (!s.running) {
+    $("pillText").textContent = "Idle";
+  } else if (s.connected) {
+    pill.classList.add("live");
+    $("pillText").textContent = "Active " + s.symbol;
+  } else {
+    pill.classList.add("reconnecting");
+    $("pillText").textContent = "Reconnecting...";
+  }
 
-  $("sCount").textContent = s.tick_count.toLocaleString();
-  $("sRecon").textContent = s.reconnects;
+  $("sTotalTicks").textContent = (s.tick_count || 0).toLocaleString();
   $("chartSym").textContent = s.symbol || "";
-  if (s.last_tick) renderLast(s.last_tick);
+
+  renderSessionStats();
 }
 
-function renderLast(t) {
-  $("sQuote").textContent = t.quote;
-  const c = $("sChange");
-  if (t.change === null || t.change === undefined) { c.textContent = "-"; c.className = "v"; }
-  else {
-    const d = Math.max(decimals(t.quote), 2);
-    c.textContent = (t.change > 0 ? "+" : "") + t.change.toFixed(d);
-    c.className = "v " + (t.change > 0 ? "up" : t.change < 0 ? "down" : "");
+function renderSessionStats() {
+  const sess = state.sess;
+  const cycle = state.currentCycle;
+  $("winTickBadge").textContent = `Window ${cycle}`;
+
+  // Ticks in this current window
+  $("sWindowCount").textContent = state.windowTicks.length.toLocaleString();
+
+  if (sess) {
+    const isW1 = cycle === 1 && sess.phase === "learning";
+    $("chartTitle").textContent = isW1
+      ? `Price (Window 1 - Gathering ticks only, no trading)`
+      : `Price (Window ${cycle} - Trading: ${sess.rule || "Observing"})`;
+
+    $("timerLabel").textContent = `Window ${cycle} Timer`;
+    $("sPhaseDesc").textContent = isW1 ? "Window 1: Gathering ticks only" : (sess.phase === "trading" ? `Trading active: ${sess.rule || ""}` : sess.phase);
+    
+    // PnL
+    const pnl = sess.pnl || 0;
+    $("sPnl").textContent = signed(pnl);
+    $("sPnl").className = "v " + (pnl > 0 ? "up" : pnl < 0 ? "down" : "");
+    $("sWl").textContent = `${sess.wins || 0} won, ${sess.losses || 0} lost`;
+
+    // Rule display
+    $("sRule").textContent = sess.rule || (isW1 ? "Gathering ticks..." : "Sitting out");
+    let detail = isW1 ? "Window 1: 10m baseline data" : (sess.phase === "trading" ? "Active strategy" : (state.strategy && state.strategy.reason) || "");
+    if (sess.kb && sess.kb.windows_learned > 0) {
+      detail += ` · ${sess.kb.windows_learned}w learned (${sess.kb.rules_tracked} rules)`;
+    }
+    $("sRuleDetail").textContent = detail;
+
+    // Account badge
+    if (sess.account) {
+      $("acctBadge").style.display = sess.mode === "real" ? "inline-block" : "none";
+      $("sAcctBal").textContent = sess.account.balance != null ? `${Number(sess.account.balance).toFixed(2)} ${sess.account.currency}` : sess.account.id;
+    }
+  } else {
+    $("chartTitle").textContent = "Price (Current Window)";
+    $("sCountdown").textContent = "10:00";
+    $("meterFill").style.width = "0%";
+    $("sPnl").textContent = "0.00";
+    $("sPnl").className = "v";
+    $("sWl").textContent = "0 won, 0 lost";
+    $("sRule").textContent = "Idle";
+    $("sRuleDetail").textContent = "Press Start to begin";
   }
 }
 
+// 10-Minute Countdown Clock & Memory Maintenance Indicator
 setInterval(() => {
-  if (state.running && state.startedAt) {
-    const s = Math.max(0, Math.floor(Date.now() / 1000 - state.startedAt));
-    $("sElapsed").textContent = pad(Math.floor(s / 3600)) + ":" + pad(Math.floor(s / 60) % 60) + ":" + pad(s % 60);
+  const sess = state.sess;
+  if (state.running && sess && sess.active && sess.window_seconds && sess.window_end) {
+    const left = Math.max(0, sess.window_end - (Date.now() / 1000 + state.offset));
+    $("sCountdown").textContent = mmss(left);
+    const progress = Math.min(100, Math.max(0, (1 - left / sess.window_seconds) * 100));
+    $("meterFill").style.width = progress.toFixed(1) + "%";
+
+    if (sess.next_archive && $("sumArch")) {
+      const archLeft = Math.max(0, sess.next_archive - (Date.now() / 1000 + state.offset));
+      $("sumArch").textContent = `1-Hr Purge (in ${mmss(archLeft)})`;
+    }
+  } else if (!state.running) {
+    $("sCountdown").textContent = "10:00";
+    $("meterFill").style.width = "0%";
+    if ($("sumArch")) $("sumArch").textContent = "1-Hr Archival & Pruning";
   }
 }, 500);
 
-// ---------------------------------------------------------------- ticks table + chart
-function addTick(t, redraw = true) {
-  state.ticks.push(t);
-  if (state.ticks.length > 300) state.ticks.shift();
-  if (!redraw) return;
-  renderLast(t);
-  $("sCount").textContent = t.count.toLocaleString();
+// ---------------------------------------------------------------- Current Window Ticks & Chart
+function addWindowTick(t, redraw = true) {
+  // If tick belongs to a new cycle, reset window ticks
+  if (t.cycle && t.cycle !== state.currentCycle) {
+    state.currentCycle = t.cycle;
+    state.windowTicks = [];
+    $("tbody").innerHTML = "";
+    playSoundTrade("rollover");
+  }
+
+  state.windowTicks.push(t);
+  // Keep only up to 1000 ticks of the current 10-min window
+  if (state.windowTicks.length > 1000) state.windowTicks.shift();
+
+  renderLastQuote(t);
+  $("sWindowCount").textContent = state.windowTicks.length.toLocaleString();
+
+  // Add to latest ticks table
   const tb = $("tbody");
   const tr = document.createElement("tr");
   const cls = t.change > 0 ? "up" : t.change < 0 ? "down" : "";
   const d = Math.max(decimals(t.quote), 2);
-  tr.innerHTML = `<td>${fmtTime(t.epoch)}</td><td>${t.quote}</td><td class="${cls}">${t.change == null ? "-" : (t.change > 0 ? "+" : "") + t.change.toFixed(d)}</td>`;
+  tr.innerHTML = `<td>${fmtTime(t.epoch)}</td><td class="num">${t.quote}</td><td class="num ${cls}">${t.change == null ? "-" : (t.change > 0 ? "+" : "") + t.change.toFixed(d)}</td>`;
   tb.insertBefore(tr, tb.firstChild);
-  while (tb.children.length > 40) tb.removeChild(tb.lastChild);
-  drawChart();
+  while (tb.children.length > 35) tb.removeChild(tb.lastChild);
+
+  if (redraw) drawChart();
 }
 
-function rebuildTable() {
-  const tb = $("tbody");
-  tb.innerHTML = "";
-  state.ticks.slice(-40).forEach((t) => {
-    const tr = document.createElement("tr");
-    const cls = t.change > 0 ? "up" : t.change < 0 ? "down" : "";
+function renderLastQuote(t) {
+  $("sQuote").textContent = t.quote;
+  const c = $("sChange");
+  if (t.change == null) {
+    c.textContent = "-"; c.className = "v";
+  } else {
     const d = Math.max(decimals(t.quote), 2);
-    tr.innerHTML = `<td>${fmtTime(t.epoch)}</td><td>${t.quote}</td><td class="${cls}">${t.change == null ? "-" : (t.change > 0 ? "+" : "") + t.change.toFixed(d)}</td>`;
-    tb.insertBefore(tr, tb.firstChild);
-  });
+    c.textContent = (t.change > 0 ? "+" : "") + t.change.toFixed(d);
+    c.className = "v " + (t.change > 0 ? "up" : t.change < 0 ? "down" : "");
+    $("sChangePips").textContent = `${Math.abs(t.change).toFixed(d)} pips`;
+  }
 }
 
 function drawChart() {
   const cv = $("chart");
   const dpr = window.devicePixelRatio || 1;
   const w = cv.clientWidth, h = cv.clientHeight;
-  if (cv.width !== w * dpr || cv.height !== h * dpr) { cv.width = w * dpr; cv.height = h * dpr; }
+  if (!w || !h) return;
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+    cv.width = Math.round(w * dpr);
+    cv.height = Math.round(h * dpr);
+  }
   const ctx = cv.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
 
-  const pts = state.ticks;
-  const padL = 8, padR = 62, padT = 10, padB = 18;
+  const pts = state.windowTicks;
+  const padL = 12, padR = 68, padT = 16, padB = 22;
+
   if (pts.length < 2) {
-    ctx.fillStyle = "#55607a"; ctx.font = "13px ui-sans-serif, system-ui";
-    ctx.fillText("Waiting for ticks...", padL + 4, h / 2);
+    ctx.fillStyle = "#7d8aa0";
+    ctx.font = "13px ui-sans-serif, system-ui";
+    ctx.fillText(state.running ? "Gathering window ticks..." : "Press Start to begin 10-minute trading session.", padL + 6, h / 2);
     return;
   }
+
   let min = Infinity, max = -Infinity;
-  for (const p of pts) { if (p.quote < min) min = p.quote; if (p.quote > max) max = p.quote; }
+  for (const p of pts) {
+    if (p.quote < min) min = p.quote;
+    if (p.quote > max) max = p.quote;
+  }
   if (min === max) { min -= 0.5; max += 0.5; }
   const m = (max - min) * 0.08; min -= m; max += m;
-  const x = (i) => padL + (i / (pts.length - 1)) * (w - padL - padR);
-  const y = (v) => padT + (1 - (v - min) / (max - min)) * (h - padT - padB);
+
+  const pw = w - padL - padR, ph = h - padT - padB;
+  const x = (i) => padL + (i / (pts.length - 1)) * pw;
+  const y = (v) => padT + (1 - (v - min) / (max - min)) * ph;
   const d = Math.max(decimals(pts[pts.length - 1].quote), 2);
 
-  // grid
-  ctx.strokeStyle = "#1a2230"; ctx.lineWidth = 1; ctx.fillStyle = "#6b7890"; ctx.font = "11px ui-monospace, Menlo, monospace";
+  // Horizontal Grid Lines
+  ctx.strokeStyle = "#1a2230"; ctx.lineWidth = 1;
+  ctx.fillStyle = "#7d8aa0"; ctx.font = "11px ui-monospace, Menlo, monospace";
   for (let i = 0; i <= 4; i++) {
-    const v = min + ((max - min) * i) / 4, yy = y(v);
+    const v = min + ((max - min) * i) / 4;
+    const yy = Math.round(y(v)) + 0.5;
     ctx.beginPath(); ctx.moveTo(padL, yy); ctx.lineTo(w - padR, yy); ctx.stroke();
-    ctx.fillText(v.toFixed(d), w - padR + 6, yy + 4);
+    ctx.fillText(v.toFixed(d), w - padR + 8, yy + 4);
   }
-  ctx.fillText(fmtTime(pts[0].epoch), padL, h - 4);
-  const lt = fmtTime(pts[pts.length - 1].epoch);
-  ctx.fillText(lt, w - padR - ctx.measureText(lt).width, h - 4);
 
-  // area
+  // Time stamps
+  ctx.fillText(fmtTime(pts[0].epoch), padL, h - 5);
+  const lastTime = fmtTime(pts[pts.length - 1].epoch);
+  ctx.fillText(lastTime, w - padR - ctx.measureText(lastTime).width, h - 5);
+
+  // TonWeb3/64 Gradient Area
   const grad = ctx.createLinearGradient(0, padT, 0, h - padB);
-  grad.addColorStop(0, "rgba(61,220,151,.22)"); grad.addColorStop(1, "rgba(61,220,151,0)");
+  grad.addColorStop(0, "rgba(61,220,151,0.22)");
+  grad.addColorStop(1, "rgba(61,220,151,0.0)");
   ctx.beginPath();
   pts.forEach((p, i) => (i ? ctx.lineTo(x(i), y(p.quote)) : ctx.moveTo(x(i), y(p.quote))));
-  ctx.lineTo(x(pts.length - 1), h - padB); ctx.lineTo(x(0), h - padB); ctx.closePath();
-  ctx.fillStyle = grad; ctx.fill();
+  ctx.lineTo(x(pts.length - 1), h - padB);
+  ctx.lineTo(x(0), h - padB);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
 
-  // line
+  // Price Line (1.8px Cyber Green)
   ctx.beginPath();
   pts.forEach((p, i) => (i ? ctx.lineTo(x(i), y(p.quote)) : ctx.moveTo(x(i), y(p.quote))));
-  ctx.strokeStyle = "#3ddc97"; ctx.lineWidth = 1.6; ctx.lineJoin = "round"; ctx.stroke();
+  ctx.strokeStyle = "#3ddc97";
+  ctx.lineWidth = 1.8;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.stroke();
 
-  // last point + label
-  const last = pts[pts.length - 1], lx = x(pts.length - 1), ly = y(last.quote);
-  ctx.fillStyle = "#3ddc97"; ctx.beginPath(); ctx.arc(lx, ly, 3.5, 0, 6.3); ctx.fill();
+  // Trade Markers for trades in this window
+  const byEpoch = new Map();
+  pts.forEach((p, i) => byEpoch.set(p.epoch, i));
+  state.allSessionTrades.forEach((tr) => {
+    const idx = byEpoch.get(tr.signal_epoch);
+    if (idx === undefined) return;
+    const mx = x(idx), my = y(pts[idx].quote);
+    const isCall = tr.side === "CALL";
+    const s = 6.5;
+
+    ctx.beginPath();
+    if (isCall) {
+      ctx.moveTo(mx, my - s - 1);
+      ctx.lineTo(mx + s, my + s - 1);
+      ctx.lineTo(mx - s, my + s - 1);
+    } else {
+      ctx.moveTo(mx, my + s + 1);
+      ctx.lineTo(mx + s, my - s + 1);
+      ctx.lineTo(mx - s, my - s + 1);
+    }
+    ctx.closePath();
+
+    if (tr.result === "won") {
+      ctx.fillStyle = "#3ddc97";
+      ctx.fill();
+    } else if (tr.result === "lost") {
+      ctx.fillStyle = "#ff5d6c";
+      ctx.fill();
+    } else {
+      ctx.fillStyle = "#ffb454";
+      ctx.fill();
+    }
+  });
+
+  // Last Quote Dot and Right Axis Badge
+  const last = pts[pts.length - 1];
+  const lx = x(pts.length - 1), ly = y(last.quote);
+  ctx.fillStyle = "#3ddc97";
+  ctx.beginPath(); ctx.arc(lx, ly, 3.5, 0, Math.PI * 2); ctx.fill();
+
   const label = String(last.quote);
-  ctx.fillStyle = "#3ddc97"; ctx.fillRect(w - padR + 2, ly - 9, padR - 4, 18);
-  ctx.fillStyle = "#04140c"; ctx.font = "600 11px ui-monospace, Menlo, monospace"; ctx.fillText(label, w - padR + 6, ly + 4);
+  ctx.fillStyle = "#3ddc97";
+  ctx.fillRect(w - padR + 2, Math.round(ly) - 9, padR - 4, 18);
+  ctx.fillStyle = "#04140c";
+  ctx.font = "600 11px ui-monospace, Menlo, monospace";
+  ctx.fillText(label, w - padR + 6, Math.round(ly) + 4);
+
+  // Crosshair on hover
+  if (state.hoverIdx != null && state.hoverIdx < pts.length) {
+    const hx = x(state.hoverIdx), hy = y(pts[state.hoverIdx].quote);
+    ctx.strokeStyle = "#4d5a73"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(Math.round(hx) + 0.5, padT); ctx.lineTo(Math.round(hx) + 0.5, h - padB); ctx.stroke();
+    ctx.fillStyle = "#3ddc97";
+    ctx.beginPath(); ctx.arc(hx, hy, 4, 0, Math.PI * 2); ctx.fill();
+  }
+
+  cv._geom = { padL, pw, padT, ph, n: pts.length };
 }
+
+// Chart Hover Interaction
+const cv = $("chart");
+function onHover(clientX) {
+  const g = cv._geom; if (!g || !state.windowTicks.length) return;
+  const rect = cv.getBoundingClientRect();
+  const xPos = clientX - rect.left;
+  const idx = Math.max(0, Math.min(g.n - 1, Math.round(((xPos - g.padL) / g.pw) * (g.n - 1))));
+  state.hoverIdx = idx;
+  drawChart();
+
+  const t = state.windowTicks[idx];
+  const tip = $("tip");
+  if (t) {
+    tip.innerHTML = `<strong>${t.quote}</strong><br><span style="color:var(--muted)">${fmtTime(t.epoch)} UTC</span>` +
+      (t.change != null ? `<br>Change: ${t.change > 0 ? "+" : ""}${t.change}` : "");
+    tip.style.left = Math.min(cv.clientWidth - 160, Math.max(10, clientX - rect.left + 12)) + "px";
+    tip.style.top = "24px";
+    tip.style.display = "block";
+  }
+}
+cv.addEventListener("pointermove", (e) => onHover(e.clientX));
+cv.addEventListener("pointerleave", () => { state.hoverIdx = null; $("tip").style.display = "none"; drawChart(); });
 window.addEventListener("resize", drawChart);
 
-// ---------------------------------------------------------------- console
+// ---------------------------------------------------------------- Strategy & Cycles Scorecard
+function renderStrategy(s) {
+  state.strategy = s;
+  if (!s) return;
+  $("stratStatus").textContent = s.reason || "";
+  const best = s.best || s.chosen;
+  if (best) {
+    $("stratGaugeWrap").style.display = "block";
+    $("stratReason").textContent = s.reason;
+    const lo = 0.40, hi = 0.90;
+    const pos = (v) => Math.max(2, Math.min(98, ((v - lo) / (hi - lo)) * 100)) + "%";
+
+    $("gBe").style.left = pos(s.breakeven);
+    $("gBeText").textContent = `Breakeven ${pct(s.breakeven)}`;
+
+    if (s.luck_p90 != null) {
+      $("gLuck").style.left = pos(s.luck_p90);
+      $("gLuck").style.display = "block";
+      $("gLuckText").textContent = `Luck Benchmark ${pct(s.luck_p90)}`;
+    } else {
+      $("gLuck").style.display = "none";
+    }
+
+    $("gDot").style.left = pos(best.win_rate);
+    $("gRuleText").textContent = `${best.rule}: won ${pct(best.win_rate)} of ${best.n}`;
+  }
+}
+
+function renderCycles() {
+  const rows = $("cycleRows");
+  const list = [...state.cyclesMap.values()].sort((a, b) => a.cycle - b.cycle);
+  if (!list.length) return;
+  rows.innerHTML = "";
+  list.forEach((c) => {
+    const tr = document.createElement("tr");
+    if (c.cycle === state.currentCycle && state.running) tr.className = "is-current";
+    const roleText = c.phase === "learn" ? "Window 1: Gathering Ticks" : (c.rule_used ? `Trading (${c.rule_used})` : "Sitting out");
+    const prev = state.cyclesMap.get(c.cycle - 1);
+    const promised = prev && prev.learned ? pct(prev.learned.win_rate) : "-";
+    const actual = c.trades ? pct(c.wins / c.trades) : "-";
+    const pnlCls = c.pnl > 0 ? "up" : c.pnl < 0 ? "down" : "";
+
+    tr.innerHTML = `
+      <td><strong>Window ${c.cycle}</strong></td>
+      <td>${roleText}</td>
+      <td style="font-family:var(--mono);font-size:12px">${c.rule_used || "-"}</td>
+      <td class="num">${c.trades}</td>
+      <td class="num" style="color:var(--muted)">${promised}</td>
+      <td class="num"><strong>${actual}</strong></td>
+      <td class="num ${pnlCls}">${c.trades ? signed(c.pnl) : "-"}</td>
+    `;
+    rows.appendChild(tr);
+  });
+}
+
+function renderTrades() {
+  const rows = $("tradeRows");
+  const list = state.allSessionTrades.slice().reverse();
+  $("tradesCountBadge").textContent = `${list.length} trades`;
+  if (!list.length) return;
+  rows.innerHTML = "";
+  list.forEach((t) => {
+    const tr = document.createElement("tr");
+    const resBadge = t.result === "won" ? '<span class="badge-res won">Won</span>' :
+                     t.result === "lost" ? '<span class="badge-res lost">Lost</span>' :
+                     t.result === "open" ? '<span class="badge-res open">Open</span>' :
+                     `<span class="badge-res void">${t.result}</span>`;
+    const profitCls = t.profit > 0 ? "up" : t.profit < 0 ? "down" : "";
+    const sideText = t.side === "CALL" ? '<span style="color:var(--up)">▲ Rise</span>' : '<span style="color:var(--down)">▼ Fall</span>';
+
+    tr.innerHTML = `
+      <td>${(t.opened_at || "").slice(11, 19)}</td>
+      <td>Window ${t.cycle}</td>
+      <td>${sideText}</td>
+      <td class="num">${t.expiry}t</td>
+      <td style="font-family:var(--mono)">${t.entry_spot != null ? `${t.entry_spot} → ${t.exit_spot != null ? t.exit_spot : "-"}` : "-"}</td>
+      <td>${resBadge}</td>
+      <td class="num ${profitCls}">${t.result === "won" || t.result === "lost" ? signed(t.profit) : "-"}</td>
+    `;
+    rows.appendChild(tr);
+  });
+}
+
+// ---------------------------------------------------------------- Console
 const con = $("console");
 function addLog(e) {
   const div = document.createElement("div");
@@ -318,20 +695,20 @@ $("autoscroll").onclick = () => {
   if (state.autoscroll) con.scrollTop = con.scrollHeight;
 };
 
-// ---------------------------------------------------------------- files
+// ---------------------------------------------------------------- Saved Files
 async function loadFiles() {
   try {
     const files = await api("/api/files");
     const box = $("files");
-    if (!files.length) { box.innerHTML = '<div class="empty">No recordings yet. Press Start to create one.</div>'; return; }
+    if (!files.length) { box.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:6px 0">No session data files yet. Press Start to begin.</div>'; return; }
     box.innerHTML = "";
     files.forEach((f) => {
       const el = document.createElement("div");
       el.className = "file";
-      el.innerHTML = `<div><div class="name">${f.name}${f.active ? '<span class="badge">recording</span>' : ""}</div>
+      el.innerHTML = `<div><div class="name"><span class="tag ${f.active ? 'active' : ''}">${f.kind}${f.active ? ' (active)' : ''}</span>${f.name}</div>
         <div class="meta">${fmtBytes(f.size)} &middot; ${new Date(f.modified).toLocaleString()}</div></div>
         <div class="actions">
-          <a href="/api/download/${encodeURIComponent(f.name)}"><button class="btn-ghost tiny">Download</button></a>
+          <a href="/api/download/${encodeURIComponent(f.name)}" class="btn-ghost tiny">Download</a>
           <button class="btn-ghost tiny" data-del="${f.name}" ${f.active ? "disabled" : ""}>Delete</button>
         </div>`;
       box.appendChild(el);
@@ -345,44 +722,146 @@ async function loadFiles() {
 }
 $("refreshFiles").onclick = loadFiles;
 
-// ---------------------------------------------------------------- actions
+// ---------------------------------------------------------------- Start/Stop Actions
 $("toggle").onclick = async () => {
   const btn = $("toggle");
+  $("err").style.display = "none";
+  if (state.running) {
+    btn.disabled = true;
+    try {
+      const s = await api("/api/stop", { method: "POST" });
+      renderStatus(s);
+    } catch (e) {
+      $("err").textContent = e.message; $("err").style.display = "block";
+    }
+    btn.disabled = false;
+    loadFiles();
+    return;
+  }
+
+  const body = {
+    symbol: $("symbol").value,
+    mode: "auto",
+    confirm_real: $("confirmReal").checked
+  };
+
   btn.disabled = true;
   try {
-    const s = state.running
-      ? await api("/api/stop", { method: "POST" })
-      : await api("/api/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: $("symbol").value }) });
+    const s = await api("/api/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
     renderStatus(s);
-  } catch (e) { alert(e.message); }
+  } catch (e) {
+    $("err").textContent = e.message;
+    $("err").style.display = "block";
+  }
   btn.disabled = false;
   loadFiles();
 };
-$("download").onclick = () => { window.location.href = "/api/download-current"; };
 
-// ---------------------------------------------------------------- init + SSE
-async function init() {
-  const syms = await api("/api/symbols");
-  $("symbol").innerHTML = syms.map((s) => `<option value="${s.id}">${s.name} (${s.id})</option>`).join("");
-  loadFiles();
-  connectSSE();
-}
+$("download").onclick = () => { window.location.href = "/api/download-current?kind=ticks"; };
 
+// ---------------------------------------------------------------- SSE Real-Time Sync
 function connectSSE() {
   const es = new EventSource("/events");
   es.addEventListener("status", (e) => { renderStatus(JSON.parse(e.data)); });
+  
   es.addEventListener("snapshot", (e) => {
     const d = JSON.parse(e.data);
-    con.innerHTML = ""; d.logs.forEach(addLog);
-    state.ticks = []; d.ticks.forEach((t) => addTick(t, false));
-    rebuildTable(); drawChart();
+    con.innerHTML = "";
+    d.logs.forEach(addLog);
+    state.windowTicks = d.ticks || [];
+    if (d.session) {
+      state.allSessionTrades = d.session.trades || [];
+      state.cyclesMap = new Map((d.session.cycles || []).map(c => [c.cycle, c]));
+      if (d.session.strategy) renderStrategy(d.session.strategy);
+    }
+    renderCycles();
+    renderTrades();
+    drawChart();
   });
-  es.addEventListener("reset", () => { state.ticks = []; $("tbody").innerHTML = ""; drawChart(); loadFiles(); });
-  es.addEventListener("tick", (e) => addTick(JSON.parse(e.data)));
+
+  es.addEventListener("reset", () => {
+    state.windowTicks = [];
+    state.allSessionTrades = [];
+    state.cyclesMap = new Map();
+    state.strategy = null;
+    $("tbody").innerHTML = "";
+    renderCycles();
+    renderTrades();
+    drawChart();
+    loadFiles();
+  });
+
+  // When a 10-minute window rolls over: clear window ticks to show ONLY this window
+  es.addEventListener("window_reset", (e) => {
+    const data = JSON.parse(e.data);
+    state.currentCycle = data.cycle;
+    state.windowTicks = [];
+    $("tbody").innerHTML = "";
+    playSoundTrade("rollover");
+    renderSessionStats();
+    drawChart();
+  });
+
+  es.addEventListener("tick", (e) => {
+    addWindowTick(JSON.parse(e.data));
+  });
+
+  es.addEventListener("trade", (e) => {
+    const tr = JSON.parse(e.data);
+    const i = state.allSessionTrades.findIndex(x => x.id === tr.id);
+    if (i >= 0) state.allSessionTrades[i] = tr; else state.allSessionTrades.push(tr);
+    playSoundTrade(tr.result);
+    renderTrades();
+    drawChart();
+  });
+
+  es.addEventListener("cycle", (e) => {
+    const c = JSON.parse(e.data);
+    state.cyclesMap.set(c.cycle, c);
+    renderCycles();
+  });
+
+  es.addEventListener("strategy", (e) => {
+    renderStrategy(JSON.parse(e.data));
+  });
+
   es.addEventListener("log", (e) => addLog(JSON.parse(e.data)));
-  es.addEventListener("status", () => {});
-  es.onerror = () => addLog({ ts: new Date().toISOString(), level: "warn", message: "Dashboard stream interrupted, reconnecting..." });
-  setInterval(loadFiles, 15000);
+  es.onerror = () => addLog({ ts: new Date().toISOString(), level: "warn", message: "Dashboard connection lost, reconnecting..." });
+  setInterval(loadFiles, 20000);
+}
+
+// ---------------------------------------------------------------- Init
+async function init() {
+  try {
+    const cfg = await api("/api/config");
+    $("symbol").innerHTML = cfg.symbols.map(s => `<option value="${s.id}">${s.name} (${s.id})</option>`).join("");
+    if (cfg.default_symbol) $("symbol").value = cfg.default_symbol;
+
+    // Setup summary
+    const d = cfg.summary || {};
+    $("sumAcct").textContent = cfg.account_mode === "real" ? "Live (Real Money)" : "Demo";
+    if (cfg.account_mode === "real") {
+      $("sumAcct").style.color = "var(--danger)";
+      $("confirmField").style.display = "block";
+      $("liveBanner").style.display = "block";
+    }
+    $("sumMode").textContent = `${d.window_minutes || 10} Min (Window 1 Baseline, Continuous Learning)`;
+    if ($("sumArch")) $("sumArch").textContent = `${d.archive_interval_minutes || 60} Min Archival`;
+    $("sumStake").textContent = d.risk || "1.00 USD";
+    $("sumLoss").textContent = (d.max_session_loss || 10.0) + " USD";
+    $("sumStrict").textContent = d.strictness === "strict" ? "Strict (Beats Breakeven & Luck)" : d.strictness;
+
+    const st = await api("/api/status");
+    renderStatus(st);
+  } catch (e) {
+    console.error(e);
+  }
+  loadFiles();
+  connectSSE();
 }
 init();
 </script>

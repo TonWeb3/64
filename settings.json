@@ -1,0 +1,22 @@
+{
+  "app_id": "33LuGFJlOlfbqzHVZLFCi",
+  "account_id": "",
+  "account_mode": "demo",
+  "allow_real": false,
+  "risk_mode": "fixed",
+  "stake": 1.0,
+  "risk_percent": 1.0,
+  "max_stake": 10.0,
+  "max_session_loss": 10.0,
+  "profit_target": 0.0,
+  "max_consecutive_losses": 0,
+  "max_trades_per_window": 20,
+  "window_minutes": 10.0,
+  "archive_interval_minutes": 60.0,
+  "strictness": "strict",
+  "min_trades": 8,
+  "edge_margin": 2.0,
+  "payout_ratio": 0.95,
+  "default_symbol": "R_100",
+  "token": ""
+}

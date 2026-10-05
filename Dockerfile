@@ -11,7 +11,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
-COPY main.py .
+COPY main.py settings.json ./
+COPY bot ./bot
 COPY static ./static
 
 # Recordings are written here. On Railway, attach a Railway Volume at /data

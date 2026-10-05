@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Settings</title>
+<link rel="stylesheet" href="/static/app.css">
+<style>
+  .page { max-width: 820px; margin: 0 auto; padding-bottom: 96px; }
+  .inline { display: flex; gap: 8px; }
+  .inline input { flex: 1; min-width: 0; }
+  .savebar span.ok { color: var(--up); font-weight: 600; }
+  .savebar span.no { color: var(--down); font-weight: 600; }
+  header { margin-bottom: 20px; }
+</style>
+</head>
+<body>
+<div id="liveBanner" class="live-banner" role="status" hidden>Live account selected. Trades use real money.</div>
+<div class="page">
+  <header>
+    <h1>Settings <span>/ Deriv Tick Collector</span></h1>
+    <div class="header-right">
+      <a class="btn-ghost tiny" href="/">Back to dashboard</a>
+    </div>
+  </header>
+
+  <div id="runningNote" class="note warn" hidden>A session is running. Stop it on the dashboard before changing settings.</div>
+  <div id="authNote" class="note bad" hidden>The dashboard has no password. Anyone who can open this page can see and use your trading setup. Set DASHBOARD_PASSWORD on the server before saving a token.</div>
+
+  <form id="f" onsubmit="return false" autocomplete="off">
+    <section class="group">
+      <h2>Deriv connection</h2>
+      <p class="sub">Create a personal access token with the trade scope in your Deriv account. It is stored on the server only and never shown again; you can replace or remove it here.</p>
+      <div class="grid2">
+        <div class="field wide">
+          <label for="token">Personal access token</label>
+          <div class="inline">
+            <input type="password" id="token" autocomplete="new-password" spellcheck="false" placeholder="Paste a token">
+            <button class="btn-ghost tiny" type="button" id="clearToken">Remove</button>
+          </div>
+          <p class="hint" id="tokenHint"></p>
+        </div>
+        <div class="field"><label for="app_id">App ID</label><input type="text" id="app_id" inputmode="numeric" spellcheck="false"><p class="hint" id="appHint">Needed for token sign-in.</p></div>
+        <div class="field"><label for="account_id">Account ID (optional)</label><input type="text" id="account_id" spellcheck="false"><p class="hint">Leave empty to use the first account that matches demo or live.</p></div>
+      </div>
+      <button class="btn-ghost" type="button" id="test">Test connection</button>
+      <div class="accts" id="accts" aria-live="polite"></div>
+    </section>
+
+    <section class="group">
+      <h2>Account</h2>
+      <p class="sub">Demo trades with practice money. Live trades with real money. The account picked here must match the type of the Deriv account.</p>
+      <div class="grid2">
+        <div class="field wide">
+          <span class="lbl" id="lA">Trade on</span>
+          <div class="seg" role="radiogroup" aria-labelledby="lA">
+            <input type="radio" name="account_mode" id="amDemo" value="demo"><label for="amDemo">Demo</label>
+            <input type="radio" name="account_mode" id="amReal" value="real"><label for="amReal" class="is-live">Live</label>
+          </div>
+        </div>
+        <div class="field wide">
+          <label class="check"><input type="checkbox" id="allow_real"><span>Allow live trading. Without this the Live option stays off.</span></label>
+          <p class="hint" id="realHint"></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="group">
+      <h2>Risk</h2>
+      <p class="sub">Keep the stake small. Even a good-looking rule can lose every trade.</p>
+      <div class="grid2">
+        <div class="field wide">
+          <span class="lbl" id="lR">Stake size</span>
+          <div class="seg" role="radiogroup" aria-labelledby="lR">
+            <input type="radio" name="risk_mode" id="rmFixed" value="fixed"><label for="rmFixed">Fixed amount</label>
+            <input type="radio" name="risk_mode" id="rmPct" value="percent"><label for="rmPct">Percent of balance</label>
+          </div>
+        </div>
+        <div class="field" data-for="fixed"><label for="stake">Stake per trade</label><input type="number" id="stake" inputmode="decimal" step="0.01" min="0.35"></div>
+        <div class="field" data-for="percent"><label for="risk_percent">Risk per trade (% of balance)</label><input type="number" id="risk_percent" inputmode="decimal" step="0.1" min="0.1" max="10"></div>
+        <div class="field"><label for="max_stake">Largest stake allowed</label><input type="number" id="max_stake" inputmode="decimal" step="0.5" min="0.35"><p class="hint" id="capHint"></p></div>
+        <div class="field"><label for="max_session_loss">Stop trading after losing</label><input type="number" id="max_session_loss" inputmode="decimal" step="1" min="0.35"></div>
+        <div class="field"><label for="profit_target">Stop trading after winning (0 is off)</label><input type="number" id="profit_target" inputmode="decimal" step="1" min="0"></div>
+        <div class="field"><label for="max_consecutive_losses">Stop after this many losses in a row (0 is off)</label><input type="number" id="max_consecutive_losses" inputmode="numeric" step="1" min="0"></div>
+        <div class="field"><label for="max_trades_per_window">Most trades per period</label><input type="number" id="max_trades_per_window" inputmode="numeric" step="1" min="1"></div>
+      </div>
+    </section>
+
+    <section class="group">
+      <h2>Strategy & Continuous Learning</h2>
+      <p class="sub">Window 1 gathers 10 minutes of baseline ticks without trading. Subsequent windows trade and re-learn while continuously updating cumulative knowledge. Every 1 hour, older raw tick queues are purged to preserve server memory while preserving learned model knowledge.</p>
+      <div class="grid2">
+        <div class="field"><label for="window_minutes">Cycle / Re-learn Interval (minutes)</label><input type="number" id="window_minutes" inputmode="decimal" step="1" min="1" value="10"><p class="hint">Window 1 gathers baseline; subsequent windows trade and re-learn.</p></div>
+        <div class="field"><label for="archive_interval_minutes">Memory Purge & Archival (minutes)</label><input type="number" id="archive_interval_minutes" inputmode="decimal" step="5" min="10" value="60"><p class="hint">Discards raw tick queues older than 1 hr to save memory while keeping learned knowledge.</p></div>
+        <div class="field wide">
+          <label for="strictness">When to trade</label>
+          <select id="strictness">
+            <option value="normal">Beats breakeven</option>
+            <option value="strict">Beats breakeven and luck</option>
+            <option value="always">Always trade the best rule</option>
+          </select>
+          <p class="hint" id="stHint"></p>
+        </div>
+        <div class="field"><label for="min_trades">Fewest trades to trust a rule</label><input type="number" id="min_trades" inputmode="numeric" step="1" min="3"></div>
+        <div class="field"><label for="edge_margin">Edge needed over breakeven (%)</label><input type="number" id="edge_margin" inputmode="decimal" step="0.5" min="0"></div>
+        <div class="field"><label for="payout_ratio">Assumed payout until Deriv quotes one</label><input type="number" id="payout_ratio" inputmode="decimal" step="0.01" min="0.5" max="1.5"></div>
+        <div class="field"><label for="default_symbol">Default symbol</label><select id="default_symbol"></select></div>
+      </div>
+    </section>
+  </form>
+</div>
+
+<div class="savebar"><div><span id="msg" role="status"></span><button id="save" class="btn-start" type="button">Save settings</button></div></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+function save(k, v) { try { localStorage.setItem(k, v); } catch (_) {} }
+function load(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  let body = null; try { body = await r.json(); } catch (_) {}
+  if (!r.ok) throw new Error((body && body.detail) || r.statusText);
+  return body;
+}
+
+
+const NUM = ["stake", "risk_percent", "max_stake", "max_session_loss", "profit_target", "max_consecutive_losses", "max_trades_per_window", "window_minutes", "archive_interval_minutes", "min_trades", "edge_margin", "payout_ratio"];
+const TXT = ["app_id", "account_id", "strictness", "default_symbol"];
+const BOOL = ["allow_real"];
+const RADIOS = ["account_mode", "risk_mode"];
+const HINT = {
+  normal: "Trade the best rule only if it won more often than the payout needs, with some margin.",
+  strict: "Also needs to beat what shuffled, patternless data usually scores. Trades least often.",
+  always: "Trade the best rule even when its numbers are weak. Expect losses if there is no real pattern.",
+};
+let S = null, tokenCleared = false;
+const radio = (n) => (document.querySelector(`input[name=${n}]:checked`) || {}).value;
+
+function fill(s) {
+  S = s; const v = s.values;
+  NUM.concat(TXT).forEach((k) => { if ($(k) && v[k] !== undefined) $(k).value = v[k]; });
+  BOOL.forEach((k) => { if ($(k)) $(k).checked = !!v[k]; });
+  RADIOS.forEach((k) => { const r = document.querySelector(`input[name=${k}][value=${v[k]}]`); if (r) r.checked = true; });
+  $("token").value = ""; tokenCleared = false;
+  $("tokenHint").textContent = s.token_set
+    ? `A token is saved (${s.token_hint || "hidden"}${s.token_source === "environment" ? ", from the server environment" : ""}). Paste a new one to replace it.`
+    : "No token saved yet.";
+  $("appHint").textContent = s.app_id_source === "environment" && !v.app_id ? "Using the App ID from the server environment." : "Needed for token sign-in.";
+  $("capHint").textContent = s.max_stake_cap ? `The server also caps this at ${s.max_stake_cap}.` : "";
+  $("authNote").hidden = s.auth_enabled || !s.token_set;
+  $("runningNote").hidden = !s.running;
+  $("realHint").textContent = s.real_env ? "Live trading is also allowed by the server environment." : "";
+  $("allow_real").disabled = s.real_env || s.running;
+  if (s.real_env) $("allow_real").checked = true;
+  sync();
+}
+
+function sync() {
+  const live = radio("account_mode") === "real";
+  const running = S && S.running;
+  const allow = $("allow_real").checked || (S && S.real_env);
+  $("amReal").disabled = !allow;
+  if (!allow && live) $("amDemo").checked = true;
+  document.querySelectorAll("[data-for]").forEach((n) => { n.hidden = n.dataset.for !== radio("risk_mode"); });
+  $("stHint").textContent = HINT[$("strictness").value];
+  $("liveBanner").hidden = !(radio("account_mode") === "real");
+  document.querySelectorAll("#f input, #f select, #f button").forEach((n) => { if (n.id !== "allow_real" && n.id !== "amReal") n.disabled = !!running; });
+  $("save").disabled = !!running;
+  $("amReal").disabled = !allow || !!running;
+  $("allow_real").disabled = !!running || (S && S.real_env);
+}
+document.querySelectorAll("#f input, #f select").forEach((n) => n.addEventListener("input", sync));
+document.querySelectorAll("#f input[type=radio]").forEach((n) => n.addEventListener("change", sync));
+$("clearToken").onclick = () => { tokenCleared = true; $("token").value = ""; $("tokenHint").textContent = "The token will be removed when you save."; };
+
+function say(text, cls) { const m = $("msg"); m.textContent = text; m.className = cls || ""; }
+
+$("save").onclick = async () => {
+  say("Saving...");
+  const values = {};
+  NUM.forEach((k) => { const raw = $(k).value; if (raw !== "") values[k] = Number(raw); });
+  TXT.forEach((k) => { values[k] = $(k).value; });
+  BOOL.forEach((k) => { values[k] = $(k).checked; });
+  RADIOS.forEach((k) => { values[k] = radio(k); });
+  if (values.account_mode === "real" && !confirm("Live trading uses real money. Save with the live account selected?")) { say(""); return; }
+  const body = { values, clear_token: tokenCleared };
+  if ($("token").value.trim()) body.token = $("token").value.trim();
+  try {
+    fill(await api("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+    say("Saved", "ok");
+  } catch (e) { say(e.message, "no"); }
+};
+
+$("test").onclick = async () => {
+  const box = $("accts"); box.textContent = "Checking...";
+  try {
+    if ($("token").value.trim()) { await api("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: $("token").value.trim(), values: { app_id: $("app_id").value } }) }); fill(await api("/api/settings")); }
+    const r = await api("/api/settings/test", { method: "POST" });
+    box.textContent = "";
+    if (!r.accounts.length) { box.textContent = "Connected, but this token has no accounts."; return; }
+    r.accounts.forEach((a) => { const d = el("div"); d.appendChild(el("span", "", `${a.id} (${a.type})`)); d.appendChild(el("span", "", `${a.balance != null ? a.balance : "-"} ${a.currency || ""}`)); box.appendChild(d); });
+  } catch (e) { box.textContent = e.message; box.style.color = "var(--critical)"; setTimeout(() => (box.style.color = ""), 4000); }
+};
+
+(async function init() {
+  try {
+    const cfg = await api("/api/config");
+    cfg.symbols.forEach((s) => { const o = el("option", "", `${s.name} (${s.id})`); o.value = s.id; $("default_symbol").appendChild(o); });
+    fill(await api("/api/settings"));
+  } catch (e) { say("Could not load settings: " + e.message, "no"); }
+})();
+</script>
+</body>
+</html>
